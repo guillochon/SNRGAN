@@ -6,14 +6,15 @@ Based somewhat on
 https://mxnet.incubator.apache.org/tutorials/unsupervised_learning/gan.html
 """
 import os
+from math import floor
 
 import mxnet as mx
 import numpy as np
 from matplotlib import pyplot as plt
 from skimage.io import imread
-from sklearn.datasets import fetch_mldata
+# from sklearn.datasets import fetch_mldata
 
-import cv2
+# import cv2
 
 
 class RandIter(mx.io.DataIter):
@@ -38,16 +39,31 @@ class RandIter(mx.io.DataIter):
             self.batch_size, self.ndim, 1, 1))]
 
 
+def prime_factors(n):
+    """Return prime factorization."""
+    i = 2
+    factors = []
+    while i * i <= n:
+        if n % i:
+            i += 1
+        else:
+            n //= i
+            factors.append(i)
+    if n > 1:
+        factors.append(n)
+    return factors
+
+
 def fill_buf(buf, num_images, img, shape):
     """Fill buffer.
 
     Takes the images in our batch and arranges them in an array so that they
     can be plotted using matplotlib
     """
-    width = buf.shape[0] / shape[1]
-    height = buf.shape[1] / shape[0]
-    img_width = int((num_images % width) * shape[0])
-    img_hight = int((num_images / height) * shape[1])
+    width = int(buf.shape[0] / shape[1])
+    height = int(buf.shape[1] / shape[0])
+    img_width = round((num_images % width) * shape[0])
+    img_hight = round(floor(num_images / height) * shape[1])
     buf[img_hight:img_hight + shape[1],
         img_width:img_width + shape[0], :] = img
 
@@ -62,15 +78,12 @@ def visualize(fake, real):
     real = real.transpose((0, 2, 3, 1))
     real = np.clip((real + 1.0) * (255.0 / 2.0), 0, 255).astype(np.uint8)
 
-    print(fake.shape, real.shape)
-
     # Create buffer array that will hold all the images in our batch Fill the
     # buffer so to arrange all images in the batch onto the buffer array
     n = np.ceil(np.sqrt(fake.shape[0]))
     fbuff = np.zeros(
         (int(n * fake.shape[1]),
          int(n * fake.shape[2]), int(fake.shape[3])), dtype=np.uint8)
-    print(n, fbuff.shape)
     for i, img in enumerate(fake):
         fill_buf(fbuff, i, img, fake.shape[1:3])
     rbuff = np.zeros(
@@ -82,7 +95,7 @@ def visualize(fake, real):
     # Create a matplotlib figure with two subplots: one for the real and the
     # other for the fake fill each plot with our buffer array, which creates
     # the image
-    fig = plt.figure()
+    fig = plt.figure(figsize=(10, 10))
     ax1 = fig.add_subplot(2, 2, 1)
     ax1.imshow(fbuff)
     ax2 = fig.add_subplot(2, 2, 2)
@@ -100,7 +113,9 @@ np.random.seed(1)
 
 # Local files
 ims = []
-datadir = "../snr-training/"
+# datadir = "../snr-training/"
+datadir = "../snr-96x96/"
+# datadir = "../chandra-snrs/"
 for filename in os.listdir(datadir):
     if not filename.endswith(".jpg"):
         continue
@@ -109,6 +124,20 @@ for filename in os.listdir(datadir):
     im = np.swapaxes(im, 0, 1)
 
     ims.append(im)
+
+imgd = ims[0].shape[1]
+
+min_csize = 4
+pfac = list(sorted(prime_factors(imgd)))
+csize = 1
+for i, pf in enumerate(pfac):
+    csize *= pf
+    if csize >= min_csize:
+        pfac = pfac[i + 1:]
+        break
+
+pprod = np.prod(pfac)
+psize = floor((csize - 1) / 2)
 
 inputd = np.array(ims)
 p = np.random.permutation(inputd.shape[0])
@@ -119,7 +148,7 @@ X = inputd[p]
 X = X.astype(np.float32) / (255.0 / 2) - 1.0
 # X = X.reshape((inputd.shape[0], 1, 64, 64))
 # X = np.tile(X, (1, 3, 1, 1))
-batch_size = 5
+batch_size = 9
 image_iter = mx.io.NDArrayIter(X, batch_size=batch_size)
 
 print('Arrays created.')
@@ -133,62 +162,78 @@ no_bias = True
 fix_gamma = True
 epsilon = 1e-5 + 1e-12
 
+min_filter = 128
+
 rand = mx.sym.Variable('rand')
 
-g1 = mx.sym.Deconvolution(rand, name='g1', kernel=(
-    4, 4), num_filter=1024, no_bias=no_bias)
-gbn1 = mx.sym.BatchNorm(g1, name='gbn1', fix_gamma=fix_gamma, eps=epsilon)
-gact1 = mx.sym.Activation(gbn1, name='gact1', act_type='relu')
+gs = []
+gbns = []
+gacts = []
 
-g2 = mx.sym.Deconvolution(gact1, name='g2', kernel=(4, 4), stride=(
-    2, 2), pad=(1, 1), num_filter=512, no_bias=no_bias)
-gbn2 = mx.sym.BatchNorm(g2, name='gbn2', fix_gamma=fix_gamma, eps=epsilon)
-gact2 = mx.sym.Activation(gbn2, name='gact2', act_type='relu')
+filt_scale = min_filter * pprod // 2
+gs.append(mx.sym.Deconvolution(rand, name='g1', kernel=(
+    csize, csize), num_filter=filt_scale, no_bias=no_bias))
+gbns.append(mx.sym.BatchNorm(
+    gs[-1], name='gbn1', fix_gamma=fix_gamma, eps=epsilon))
+gacts.append(mx.sym.Activation(gbns[-1], name='gact1', act_type='relu'))
 
-g3 = mx.sym.Deconvolution(gact2, name='g3', kernel=(4, 4), stride=(
-    2, 2), pad=(1, 1), num_filter=256, no_bias=no_bias)
-gbn3 = mx.sym.BatchNorm(g3, name='gbn3', fix_gamma=fix_gamma, eps=epsilon)
-gact3 = mx.sym.Activation(gbn3, name='gact3', act_type='relu')
-
-g4 = mx.sym.Deconvolution(gact3, name='g4', kernel=(4, 4), stride=(
-    2, 2), pad=(1, 1), num_filter=128, no_bias=no_bias)
-gbn4 = mx.sym.BatchNorm(g4, name='gbn4', fix_gamma=fix_gamma, eps=epsilon)
-gact4 = mx.sym.Activation(gbn4, name='gact4', act_type='relu')
-
-g5 = mx.sym.Deconvolution(gact4, name='g5', kernel=(4, 4), stride=(
-    2, 2), pad=(1, 1), num_filter=3, no_bias=no_bias)
-generatorSymbol = mx.sym.Activation(g5, name='gact5', act_type='tanh')
+for pi, pf in enumerate(pfac):
+    filt_scale //= 2
+    sgi = str(pi + 2)
+    if pi < len(pfac) - 1:
+        gs.append(mx.sym.Deconvolution(
+            gacts[-1], name='g' + sgi, kernel=(csize, csize), stride=(pf, pf),
+            pad=(psize, psize), num_filter=filt_scale, no_bias=no_bias))
+        gbns.append(
+            mx.sym.BatchNorm(
+                gs[-1], name='gbn' + sgi, fix_gamma=fix_gamma, eps=epsilon))
+        gacts.append(mx.sym.Activation(
+            gbns[-1], name='gact' + sgi, act_type='relu'))
+    else:
+        gs.append(mx.sym.Deconvolution(
+            gacts[-1], name='g' + sgi, kernel=(csize, csize), stride=(pf, pf),
+            pad=(psize, psize), num_filter=3, no_bias=no_bias))
+        generatorSymbol = mx.sym.Activation(
+            gs[-1], name='gact' + sgi, act_type='tanh')
 
 # The discriminator.
 print('Defining MX discriminator.')
 data = mx.sym.Variable('data')
 
-d1 = mx.sym.Convolution(data, name='d1', kernel=(4, 4), stride=(
-    2, 2), pad=(1, 1), num_filter=128, no_bias=no_bias)
-dact1 = mx.sym.LeakyReLU(d1, name='dact1', act_type='leaky', slope=0.2)
+filt_scale = min_filter
 
-d2 = mx.sym.Convolution(dact1, name='d2', kernel=(4, 4), stride=(
-    2, 2), pad=(1, 1), num_filter=256, no_bias=no_bias)
-dbn2 = mx.sym.BatchNorm(d2, name='dbn2', fix_gamma=fix_gamma, eps=epsilon)
-dact2 = mx.sym.LeakyReLU(dbn2, name='dact2', act_type='leaky', slope=0.2)
+ds = []
+dbns = []
+dacts = []
 
-d3 = mx.sym.Convolution(dact2, name='d3', kernel=(4, 4), stride=(
-    2, 2), pad=(1, 1), num_filter=512, no_bias=no_bias)
-dbn3 = mx.sym.BatchNorm(d3, name='dbn3', fix_gamma=fix_gamma, eps=epsilon)
-dact3 = mx.sym.LeakyReLU(dbn3, name='dact3', act_type='leaky', slope=0.2)
+pf = pfac[-1]
+ds.append(mx.sym.Convolution(data, name='d1', kernel=(csize, csize), stride=(
+    pf, pf), pad=(psize, psize), num_filter=filt_scale, no_bias=no_bias))
+dacts.append(
+    mx.sym.LeakyReLU(ds[-1], name='dact1', act_type='leaky', slope=0.2))
 
-d4 = mx.sym.Convolution(dact3, name='d4', kernel=(4, 4), stride=(
-    2, 2), pad=(1, 1), num_filter=1024, no_bias=no_bias)
-dbn4 = mx.sym.BatchNorm(d4, name='dbn4', fix_gamma=fix_gamma, eps=epsilon)
-dact4 = mx.sym.LeakyReLU(dbn4, name='dact4', act_type='leaky', slope=0.2)
-
-d5 = mx.sym.Convolution(dact4, name='d5', kernel=(4, 4),
-                        num_filter=1, no_bias=no_bias)
-d5 = mx.sym.Flatten(d5)
+for pi, pf in enumerate(pfac):
+    filt_scale *= 2
+    sgi = str(pi + 2)
+    if pi < len(pfac) - 1:
+        ds.append(mx.sym.Convolution(
+            dacts[-1], name='d' + sgi, kernel=(csize, csize),
+            stride=(pf, pf), pad=(psize, psize), num_filter=filt_scale,
+            no_bias=no_bias))
+        dbns.append(
+            mx.sym.BatchNorm(
+                ds[-1], name='dbn' + sgi, fix_gamma=fix_gamma, eps=epsilon))
+        dacts.append(mx.sym.LeakyReLU(
+            dbns[-1], name='dact' + sgi, act_type='leaky', slope=0.2))
+    else:
+        ds.append(mx.sym.Convolution(
+            dacts[-1], name='d' + sgi, kernel=(csize, csize),
+            num_filter=1, no_bias=no_bias))
+        ds[-1] = mx.sym.Flatten(ds[-1])
 
 label = mx.sym.Variable('label')
 discriminatorSymbol = mx.sym.LogisticRegressionOutput(
-    data=d5, label=label, name='dloss')
+    data=ds[-1], label=label, name='dloss')
 
 # Hyperperameters
 sigma = 0.02
@@ -227,7 +272,7 @@ mods.append(discriminator)
 
 # Train
 print('Training...')
-for epoch in range(10):
+for epoch in range(100):
     image_iter.reset()
     for i, batch in enumerate(image_iter):
         # Get a batch of random numbers to generate an image from the generator
