@@ -148,6 +148,17 @@ p = [i for s in [
     np.random.permutation(inputd.shape[0]) for x in range(nrepeat)] for i in s]
 
 X = inputd[p]
+nX = []
+for y in X:
+    nrots = np.random.randint(4)
+    ny = y
+    if np.random.randint(2):
+        ny = np.array([np.flipud(z) for z in ny])
+    if np.random.randint(2):
+        ny = np.array([np.fliplr(z) for z in ny])
+    ny = np.array([np.rot90(z, k=nrots) for z in ny])
+    nX.append(ny)
+X = np.array(nX)
 X = X.astype(np.float32) / (255.0 / 2) - 1.0
 image_iter = mx.io.NDArrayIter(X, batch_size=batch_size)
 
