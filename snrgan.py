@@ -16,6 +16,8 @@ import numpy as np
 from matplotlib import pyplot as plt
 from skimage.io import imread
 
+plt.switch_backend('agg')
+
 
 class RandIter(mx.io.DataIter):
     """Produce random numbers."""
@@ -237,7 +239,7 @@ discriminatorSymbol = mx.sym.LogisticRegressionOutput(
 sigma = 0.02
 lr = 1.0 / float(len(ims)) / float(batch_size)
 beta1 = 0.5
-ctx = mx.cpu()
+ctx = mx.gpu(0)
 
 print('Creating modules.')
 # Generator module
