@@ -196,6 +196,8 @@ for pi, pf in enumerate(pfac):
         generatorSymbol = mx.sym.Activation(
             gs[-1], name='gact' + sgi, act_type='tanh')
 
+print('Generator has `{}` layers.'.format(len(gs)))
+
 # The discriminator.
 print('Defining MX discriminator.')
 data = mx.sym.Variable('data')
@@ -234,6 +236,9 @@ for pi, pf in enumerate(pfac):
 label = mx.sym.Variable('label')
 discriminatorSymbol = mx.sym.LogisticRegressionOutput(
     data=ds[-1], label=label, name='dloss')
+
+print('Discriminator has `{}` layers.'.format(len(ds)))
+
 
 # Hyperperameters
 sigma = 0.02
