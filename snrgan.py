@@ -4,6 +4,9 @@ Intended to be run within Hydrogen.
 
 Based somewhat on
 https://mxnet.incubator.apache.org/tutorials/unsupervised_learning/gan.html
+
+For installing CUDA/CuDNN this was a useful guide:
+https://www.pyimagesearch.com/2016/07/04/how-to-install-cuda-toolkit-and-cudnn-for-deep-learning/
 """
 import os
 from math import floor
@@ -268,7 +271,7 @@ mods.append(discriminator)
 # Train
 print('Training...')
 cnt = 0
-for epoch in range(nepochs):
+for epoch in range(1):
     image_iter.reset()
     for i, batch in enumerate(image_iter):
         # Get a batch of random numbers to generate an image from the generator
