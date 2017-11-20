@@ -141,11 +141,11 @@ for i, pf in enumerate(pfac):
 pprod = np.prod(pfac)
 psize = floor((csize - 1) / 2)
 batch_size = 16
-nepochs = 100
+nrepeat = 200
 
 inputd = np.array(ims)
 p = [i for s in [
-    np.random.permutation(inputd.shape[0]) for x in range(nepochs)] for i in s]
+    np.random.permutation(inputd.shape[0]) for x in range(nrepeat)] for i in s]
 
 X = inputd[p]
 X = X.astype(np.float32) / (255.0 / 2) - 1.0
